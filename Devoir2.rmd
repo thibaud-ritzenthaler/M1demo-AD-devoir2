@@ -2,6 +2,7 @@
 title: "Devoir 2"
 output: html_notebook
 ---
+*Thibaud Ritzenthaler*
 
 *Disponible sur ce [site](https://thibaud-ritzenthaler.github.io/M1demo-AD-devoir2/), le code source sur [Github](https://github.com/thibaud-ritzenthaler/M1demo-AD-devoir2)*.
 
@@ -27,30 +28,36 @@ library(LexisPlotR)
 ```
 
 # Exercice 1
-### Introduction
-Cet exercice à pour objectif de présenter l'analyse démographique de phénomènes répétable et des taux de deuxième catégorie *TODO à completer*.
+## Introduction
+Cet exercice à pour objectif de présenter l'analyse démographique de phénomènes répétable et des taux de deuxième catégorie **TODO à completer**.
 Les données de cet exercice sont deux tables comprenant la nuptialité et la fécondité au sein et hors du mariage pour une génération de femmes.
+
+**Note : dans cet exercice, on parlera de fécondité naturelle pour parler de la fécondité des femmes non mariées**
+
+[Voir les figures de cet exercice (1, 2, 3) en Annexe.](#figures-exercice-1)
 
 ## Partie 1
 
-#### Question 1
-##### Résultat
-[Voir la figure 1 en Annexe.](#Figure-1)
-
-##### Démarche
+### Démarches de construction des tables et graphiques
 Pour calculer les taux de fécondité générale par âge $f_{x}$, on divise pour chaque âge le nombre de naissances à l'âge $x$, noté $N_{(x,x+1)}$, par la population des femmes à l'âge $x$, noté $P_{(x+0,5)}$. On a $f_{x} = \frac{N_{(x,x+1)}}{P_{(x+0,5)}}$
 
-Afin de calculer le taux de fécondité légitime, il faut poser l'hypothèse d'indépendance des phénomènes de naissance légitime par âge $x$, noté $fl_{x}$, et de naissance naturelle par âge $x$, noté $fn_{x}$. Pour chaque âge on calcule le nombre de femmes mariées en faisant la
+Afin de calculer le taux de fécondité légitime noté $fl_{x}$, on divise le nombre de naissances naturelles mar le nombre de femmes mariées à chaque $x$. Pour chaque âge $x$, on calcule la population de femmes mariées en faisant la somme des femmes mariées à l'âge $x$ précédant et des mariages à l'age $x$.
 
-##### Commentaire
+Il faut poser l'hypothèse d'indépendance des phénomènes de naissance légitime par âge $x$, noté $fl_{x}$, et de naissance naturelle par âge $x$, noté $fn_{x}$.
 
+### Commentaire
 
 ## Partie 2
 
-### Conclusion
+### Démarches de construction des tables et graphiques
+Les démarches sont sensiblement les mêmes que dans la partie 1, avec les nouvelles données.
+
+### Commentaire
+
+## Conclusion
 
 # Annexes
-#### Figure 1
+### Figures exercice 1
 ```{r include = FALSE}
 Pop <- 1000
 NaissancesPart1 <- read_excel("./data/exo1/part1.xlsx") %>%
@@ -58,7 +65,7 @@ rename(Mariages = `Mariage (x;x+5)`, Naissances = `Naissances (x,x+5)`, Naissanc
 column_to_rownames("Age (r\u00e9volu)")
 
 NaissancesPart1 <- NaissancesPart1 %>%
-  mutate(fx = Naissances/Pop)
+  mutate(fx = round(Naissances/Pop,3))
 
 Mariees <- 0
 
@@ -67,15 +74,48 @@ for (i in seq_along(NaissancesPart1$Mariages)) {
     Mariees <- Mariees + NaissancesPart1$Mariages[i]
   }
   NaissancesPart1$Mariees[i] <- Mariees
-
 }
 
+
+
 NaissancesPart1 <- NaissancesPart1 %>%
-  mutate(flx = NaissancesLeg/Mariees)
+  mutate(flx = case_when(sum(NaissancesPart1$Mariages)/2 != Mariages ~ round(NaissancesLeg/Mariees, 3))) %>%
+  mutate(fnx = case_when(sum(NaissancesPart1$Mariages)/2 != Mariages ~ round((Naissances - NaissancesLeg)/(Pop - Mariees), 3)))
+NaissancesPart1$flx[is.na(NaissancesPart1$flx)] <- sum(NaissancesPart1$flx, na.rm = TRUE)
+NaissancesPart1$fnx[is.na(NaissancesPart1$fnx)] <- sum(NaissancesPart1$fnx, na.rm = TRUE)
+
 
 ```
 ```{r echo = FALSE}
-Colones <- c("Mariages $(x,x+5)$","Naissances $(x,x+5)$","Naissances l\u00e9gitimes $(x,x+5)$","$f(x,x+5)$","Mari\u00e9es $(x,x+5)$","$fl(x,x+5)$")
-kable(NaissancesPart1, col.names = Colones, align = "c")
+Colones <- c("Mariages $(x,x+5)$","Naissances $(x,x+5)$","Naissances l\u00e9gitimes $(x,x+5)$","Taux de f\u00e9condit\u00e9 $f_{(x,x+5)}$"," Taux de f\u00e9condit\u00e9 l\u00e9gitime $fl_{(x,x+5)}$", " Taux de f\u00e9condit\u00e9 naturel $fn_{(x,x+5)}$")
+kable(select(NaissancesPart1, -Mariees), col.names = Colones, align = "c")
 ```
 *Figure 1 : Table de nuptialité et de fécondité, naturelle, légitime et totale*
+
+```{r echo = FALSE, warning = FALSE}
+NaissancesPart1Gen <- NaissancesPart1 %>%
+        head(-1) %>%
+        rownames_to_column(var = "gen") %>%
+        mutate(ageMoy = (as.numeric(substr(gen,2,3)) + as.numeric(substr(gen,5,6)))/2) %>%
+        pivot_longer(c(fx,flx, fnx), names_to = "fec", values_to = "taux")
+NaissancesPart1Gen$fec <- NaissancesPart1Gen$fec %>%
+        fct_relevel(
+                "fx", "flx", "fnx"
+        ) %>%
+  fct_recode(
+    "L\u00e9gitime" = "flx",
+    "Naturel" = "fnx",
+    "Total" = "fx"
+  )
+
+ggplot(NaissancesPart1Gen)+
+        geom_line(aes(x = ageMoy, y = taux, color = fec, linetype = fec, size = fec))+
+        scale_color_manual("Taux de f\u00e9condit\u00e9",values=c("#785f9a","#2c8ecb","#71a257"))+
+        scale_linetype_manual("Taux de f\u00e9condit\u00e9", values = c("solid","dotted", "dashed")) +
+        scale_size_manual("Taux de f\u00e9condit\u00e9", values=c(1.2, 1.2, 1.2))+
+        ylab("Taux de f\u00e9condit\u00e9")+
+        xlab("\u00C2ge")+
+        theme(legend.position=c(0.84, 0.84))
+```
+*Figure 2 : Evolution des taux de fécondité des femmes en général, des femmes mariées et des femmes non mariées en fonction de leur âge*
+
