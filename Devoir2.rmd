@@ -1,10 +1,10 @@
 ---
 title: "Devoir 2"
-output: html_notebook
+output: pdf_document
 ---
 *Thibaud Ritzenthaler*
 
-*Disponible sur ce [site](https://thibaud-ritzenthaler.github.io/M1demo-AD-devoir2/), le code source sur [Github](https://github.com/thibaud-ritzenthaler/M1demo-AD-devoir2)*.
+*Disponible sur ce [thibaud-ritzenthaler.github.io/M1demo-AD-devoir2](https://thibaud-ritzenthaler.github.io/M1demo-AD-devoir2/), le code source sur [Github](https://github.com/thibaud-ritzenthaler/M1demo-AD-devoir2)*.
 
 ```{r include = FALSE}
 # Initialisation
@@ -19,7 +19,8 @@ library(cowplot)
 library(scales)
 library(gridExtra)
 library(ggpattern)
-library(LexisPlotR)
+library(ggrepel)
+#library(LexisPlotR)
 #library(kableExtra)
 
 # pour un doc pdf, remplacer output par pdf_document et decommenter les lignes suivantes
@@ -28,8 +29,54 @@ library(LexisPlotR)
 ```
 
 # Exercice 1
+```{r include = FALSE}
+Pop <- 1000
+NaissancesPart1 <- read_excel("./data/exo1/part1.xlsx") %>%
+  rename(Mariages = `Mariage (x;x+5)`, Naissances = `Naissances (x,x+5)`, NaissancesLeg = `Naissances légitimes (x;x+5)`) %>%
+  column_to_rownames("Age (r\u00e9volu)")
+
+NaissancesPart2 <- read_excel("./data/exo1/part2.xlsx") %>%
+        rename(Mariages = `Mariage (x;x+5)`, Naissances = `Naissances (x,x+5)`, NaissancesLeg = `Naissances légitimes (x;x+5)`) %>%
+        column_to_rownames("Age (r\u00e9volu)") %>%
+        mutate(fx = round(Naissances/(Pop*5),3))
+
+GetCompleteTable <- function(BirthTable) {
+  res <- BirthTable
+  Mariees <- 0
+  MarieesMoy <- 0
+
+  for (i in seq_along(res$Mariages)) {
+    if (row.names(res)[i] != "Total") {
+      Mariees <- Mariees + res$Mariages[i]
+      MarieesMoy <- Mariees + res$Mariages[i]/2
+    }
+    res$Mariees[i] <- Mariees
+  }
+
+  res <- res %>%
+          mutate(fx = round(Naissances/(Pop*5),3)) %>%
+          mutate(flx = case_when(sum(res$Mariages)/2 != Mariages ~ round(res$NaissancesLeg/(MarieesMoy * 5), 3))) %>%
+          mutate(fnx = case_when(sum(res$Mariages)/2 != Mariages ~ round((Naissances - NaissancesLeg)/((Pop - MarieesMoy) * 5), 3))) %>%
+          mutate(compLeg = case_when(sum(res$Mariages)/2 != Mariages ~ round(NaissancesLeg/(Pop * 5), 3))) %>%
+          mutate(compNat = case_when(sum(res$Mariages)/2 != Mariages ~ round((Naissances - NaissancesLeg)/(Pop * 5), 3))) %>%
+          mutate(naissLegMari = round(NaissancesLeg/Mariages, 3)) %>%
+          mutate(annVec = Mariees * 5)
+
+  res$flx[is.na(res$flx)] <- sum(res$flx, na.rm = TRUE)
+  res$fnx[is.na(res$fnx)] <- sum(res$fnx, na.rm = TRUE)
+  res$compLeg[is.na(res$compLeg)] <- sum(res$compLeg, na.rm = TRUE)
+  res$compNat[is.na(res$compNat)] <- sum(res$compNat, na.rm = TRUE)
+
+  res$mnlpam[8] <- round(sum(res$NaissancesLeg[1:7] * res$naissLegMari[1:7])/sum(res$annVec[1:7]),3)
+
+  return(res)
+}
+
+NaissancesPart1 <- GetCompleteTable(NaissancesPart1)
+NaissancesPart2 <- GetCompleteTable(NaissancesPart2)
+```
 ## Introduction
-Cet exercice à pour objectif de présenter l'analyse démographique de phénomènes répétable et des taux de deuxième catégorie **TODO à completer**.
+Cet exercice à pour objectif de présenter l'analyse démographique de phénomènes répétable et des taux de deuxième catégorie en retrouvant, pour une population comparable, l'impact de différents calendriers. **TODO à completer**.
 Les données de cet exercice sont deux tables comprenant la nuptialité et la fécondité au sein et hors du mariage pour une génération de femmes.
 
 **Note : dans cet exercice, on parlera de fécondité naturelle pour parler de la fécondité des femmes non mariées**
@@ -39,13 +86,24 @@ Les données de cet exercice sont deux tables comprenant la nuptialité et la f�
 ## Partie 1
 
 ### Démarches de construction des tables et graphiques
-Pour calculer les taux de fécondité générale par âge $f_{x}$, on divise pour chaque âge le nombre de naissances à l'âge $x$, noté $N_{(x,x+1)}$, par la population des femmes à l'âge $x$, noté $P_{(x+0,5)}$. On a $f_{x} = \frac{N_{(x,x+1)}}{P_{(x+0,5)}}$
+On doit poser ici l'hypothèse de continuité et d'indépendance des naissances, des mariages ainsi que des mariages et des naissances entre eux.
+
+Pour calculer les taux de fécondité générale par âge $f_{x}$, on divise pour chaque âge le nombre de naissances à l'âge $x$, noté $N_{(x,x+1)}$, par la population des femmes à l'âge $x$, noté $P_{(x+0,5)}$. On a $f_{x} = \frac{N_{(x,x+1)}}{P_{(x+0,5)}}$. Comme on a uniquement les valeurs pour 5 ans, on applique les valeurs pour les 5 ans : $f_{x+5} = \frac{N_{(x,x+5)}}{P_{(x+2,5)}}$
 
 Afin de calculer le taux de fécondité légitime noté $fl_{x}$, on divise le nombre de naissances naturelles mar le nombre de femmes mariées à chaque $x$. Pour chaque âge $x$, on calcule la population de femmes mariées en faisant la somme des femmes mariées à l'âge $x$ précédant et des mariages à l'age $x$.
 
+Pour calculer les taux de fécondités totaux, on fait la somme des taux aux différentes cohortes d'age : $\sum_{x=15}^{49} f_{x}$
+
 Il faut poser l'hypothèse d'indépendance des phénomènes de naissance légitime par âge $x$, noté $fl_{x}$, et de naissance naturelle par âge $x$, noté $fn_{x}$.
 
+Pour rapporter le nombre de naissances légitimes au nombre de mariages, on a par âge $x$ : $\frac{Nl_{x,x+5}}{M_{(x+2,5)}}$
+
+Le calcul du total des années vécues au sein du mariage est le suivant : $\sum_{x=15}^{49} Maries_{x + 0,5}$. Comme nous n'avons pas le détail par an, mais par 5 ans, on prend les mariées à l'age $x + 2,5$
+
 ### Commentaire
+
+-
+
 
 ## Partie 2
 
@@ -56,66 +114,346 @@ Les démarches sont sensiblement les mêmes que dans la partie 1, avec les nouve
 
 ## Conclusion
 
-# Annexes
-### Figures exercice 1
+# Exercice 2
 ```{r include = FALSE}
-Pop <- 1000
-NaissancesPart1 <- read_excel("./data/exo1/part1.xlsx") %>%
-rename(Mariages = `Mariage (x;x+5)`, Naissances = `Naissances (x,x+5)`, NaissancesLeg = `Naissances légitimes (x;x+5)`) %>%
-column_to_rownames("Age (r\u00e9volu)")
+# Exo 2
+AgeMariageFemme <- read_excel("./data/exo2/exo2a.xlsx") %>%
+  column_to_rownames("Probabilit\u00e9 d’agrandissement an * 1000") %>%
+  rename("19" = "- de 20 ans", "22" = "20-24 ans", "27" = "25-29 ans", "32" = "30-34 ans", "39.5" = "35-44 ans")
 
-NaissancesPart1 <- NaissancesPart1 %>%
-  mutate(fx = round(Naissances/Pop,3))
+AgeMariageFemme1 <- AgeMariageFemme[1:5,]
+AgeMariageFemme2 <- AgeMariageFemme[6:9,]
 
-Mariees <- 0
+# With interpolation data
+AgeMariageFemme1$`20` <- c(957, 970,961,	951, 935)
+AgeMariageFemme1$`25` <- c(917, 953,	933, 913, 883)
+AgeMariageFemme1$`30` <- c(866, 925,	883, 840, 780)
+AgeMariageFemme1$`35` <- c(785, 850,	788, 725, 650)
 
-for (i in seq_along(NaissancesPart1$Mariages)) {
-  if (row.names(NaissancesPart1)[i] != "Total") {
-    Mariees <- Mariees + NaissancesPart1$Mariages[i]
+DureeMariageNaissance <- read_excel("./data/exo2/exo2b.xlsx") %>% column_to_rownames("...1")
+
+AgeMereMariagePivot <- AgeMariageFemme1[,6:9] %>%
+        rownames_to_column("an") %>%
+        pivot_longer(c("20","25", "30", "35"), names_to = "age", values_to = "proba") %>%
+        mutate(label = if_else(age == max(age), paste0("a[", substr(an, 2,2), "]"), NA_character_))
+
+for (agr in 1:5) {
+  for (agen in c("20", "25", "30", "35")) {
+    if (!is.na(DureeMariageNaissance[as.numeric(agr),paste(agen, "ans")])){
+      AgeMereMariagePivot[AgeMereMariagePivot$an == paste0("a", as.factor(agr-1)) & AgeMereMariagePivot$age == agen,]$age <- as.character(as.numeric(AgeMereMariagePivot[AgeMereMariagePivot$an == paste0("a", as.factor(agr-1)) & AgeMereMariagePivot$age == agen,]$age) - as.numeric(DureeMariageNaissance[as.numeric(agr),paste(agen, "ans")]))
+    }
   }
-  NaissancesPart1$Mariees[i] <- Mariees
 }
 
+DureeMariageNaissance2 <- read_excel("./data/exo2/exo2crang.xlsx") %>%
+        rename("durMarNai" = "Dur\u00e9e moyenne entre le mariage et la naissance du ni\u00E8me enfant (an)")
 
+AgeMariageFemme4 <- read_excel("./data/exo2/exo2cage.xlsx") %>%
+        rename("22" = "20 24 ans", "27" = "25-29ans") %>%
+        mutate(rang  = as.numeric(substr(`Valeurs de an * 1000`, 1,1))) %>%
+        select(-`Valeurs de an * 1000`) %>%
+        pivot_longer(c("22", "27"), names_to = "ageMar", values_to = "proba") %>%
+        mutate(ageNaiss  = as.numeric(ageMar))
 
-NaissancesPart1 <- NaissancesPart1 %>%
-  mutate(flx = case_when(sum(NaissancesPart1$Mariages)/2 != Mariages ~ round(NaissancesLeg/Mariees, 3))) %>%
-  mutate(fnx = case_when(sum(NaissancesPart1$Mariages)/2 != Mariages ~ round((Naissances - NaissancesLeg)/(Pop - Mariees), 3)))
-NaissancesPart1$flx[is.na(NaissancesPart1$flx)] <- sum(NaissancesPart1$flx, na.rm = TRUE)
-NaissancesPart1$fnx[is.na(NaissancesPart1$fnx)] <- sum(NaissancesPart1$fnx, na.rm = TRUE)
+for (i in seq_along(AgeMariageFemme4$ageNaiss)) {
+  AgeMariageFemme4$ageNaiss[i] <- AgeMariageFemme4$ageNaiss[i] + as.numeric(DureeMariageNaissance2[AgeMariageFemme4$rang[i],]$durMarNai)
+}
 
-
-```
-```{r echo = FALSE}
-Colones <- c("Mariages $(x,x+5)$","Naissances $(x,x+5)$","Naissances l\u00e9gitimes $(x,x+5)$","Taux de f\u00e9condit\u00e9 $f_{(x,x+5)}$"," Taux de f\u00e9condit\u00e9 l\u00e9gitime $fl_{(x,x+5)}$", " Taux de f\u00e9condit\u00e9 naturel $fn_{(x,x+5)}$")
-kable(select(NaissancesPart1, -Mariees), col.names = Colones, align = "c")
-```
-*Figure 1 : Table de nuptialité et de fécondité, naturelle, légitime et totale*
-
-```{r echo = FALSE, warning = FALSE}
-NaissancesPart1Gen <- NaissancesPart1 %>%
-        head(-1) %>%
-        rownames_to_column(var = "gen") %>%
-        mutate(ageMoy = (as.numeric(substr(gen,2,3)) + as.numeric(substr(gen,5,6)))/2) %>%
-        pivot_longer(c(fx,flx, fnx), names_to = "fec", values_to = "taux")
-NaissancesPart1Gen$fec <- NaissancesPart1Gen$fec %>%
-        fct_relevel(
-                "fx", "flx", "fnx"
-        ) %>%
-  fct_recode(
-    "L\u00e9gitime" = "flx",
-    "Naturel" = "fnx",
-    "Total" = "fx"
+AgeMariageFemme4 <- mutate(AgeMariageFemme4, label = case_when(
+  ageNaiss == 34.5 & ageMar == 22 ~  paste("Mari\u00e9e \u00e0", ageMar, "ans"),
+  ageNaiss == 37 & ageMar == 27 ~  paste("Mari\u00e9e \u00e0", ageMar, "ans"),
+                           TRUE ~ NA_character_)
   )
 
-ggplot(NaissancesPart1Gen)+
-        geom_line(aes(x = ageMoy, y = taux, color = fec, linetype = fec, size = fec))+
-        scale_color_manual("Taux de f\u00e9condit\u00e9",values=c("#785f9a","#2c8ecb","#71a257"))+
-        scale_linetype_manual("Taux de f\u00e9condit\u00e9", values = c("solid","dotted", "dashed")) +
-        scale_size_manual("Taux de f\u00e9condit\u00e9", values=c(1.2, 1.2, 1.2))+
+
+```
+
+[Voir les figures de cet exercice en Annexe.](#figures-exercice-2)
+
+### Introduction
+
+Cet exercice à pour but de **TODO à completer**
+
+### Démarches de construction des tables et graphiques
+
+Afin de construire les graphiques, onn doit poser les hypothèses d'indépendance et de continuité des phénomènes au sein des différentes classes d'âges.
+
+### Commentaires
+
+-
+
+# Exercice 3
+
+```{r echo = FALSE}
+MortaliteInfantile <- read_excel("./data/exo3/exo3.xlsx") %>%
+        rename("enfants" = "Familles de", "tauxFamille" = "Nombre relatif de familles de la dimension ci contre", "tauxMortInfant1000" = "Taux de mortalit\u00e9 infantile pour 1000") %>%
+        filter(!is.na(tauxMortInfant1000)) %>%
+        mutate(enfants = as.numeric(substr(enfants, 1,1))) %>%
+        mutate(tauxMortInfant = tauxMortInfant1000/1000) %>%
+        mutate(tauxFamilleRang1000 = NA)
+
+EnfantsParFamille <- sum(MortaliteInfantile$tauxFamille * MortaliteInfantile$enfants)/100
+
+TauxMortInfantile <- sum(MortaliteInfantile$tauxFamille * MortaliteInfantile$tauxMortInfant)/100 * 1000
+
+propor <- 0
+mortParFamille <- 0
+
+for (i in length(MortaliteInfantile$enfants):1) {
+  propor <- propor + MortaliteInfantile$tauxFamille[i]
+  mortParFamille <- mortParFamille + MortaliteInfantile$tauxFamille[i] * MortaliteInfantile$tauxMortInfant1000[i]
+  MortaliteInfantile$tauxFamilleRang1000[i] <- round(mortParFamille / propor)
+}
+
+```
+
+[Voir les figures de cet exercice en Annexe.](#figures-exercice-3)
+
+### Introduction
+
+Cet exercice à pour but de **TODO à completer**
+
+### Démarches de construction des tables et graphiques
+
+Le nombre moyen d'enfants par famille se calcule en multipliant le nombre d'enfants par famille $N_{e}$ par le nombre de familles relatif $N_{f}$ en ratio puis en additionnant les résultats : $\sum N_{e}\cdot\frac{N_{f}}{100}$
+
+Le taux de mortalité infantile de l'ensemble des enfants correspond à la moyenne des taux de mortalité pondérés par les ratios des familles affectées par ce taux de mortalité infantile.
+
+Le taux de mortalité infantile de chaque rang de naissance pour l’ensemble des familles ayant des enfants de ce rang se calcule en faisant le ratio de la mortalité infantile $M_{f,\cdots, f+n}$ par le nombre relatif de familles de la dimension avec 100 familles $N_{f,\cdots, f+n}$ par le pourcentage des familles ayant connu le phénomène (par exemple toutes les familles ayant 4 enfants ont connu le phénomène de mortalité infantile à 1, 2 et 3 enfants) $P_{f}$.
+
+### Commentaires
+
+-
+
+# Annexes
+### Figures exercice 1
+
+```{r echo = FALSE}
+Colones <- c("Mariages","Naissances","Naissances l\u00e9gitimes","Taux de f\u00e9condit\u00e9 $f_{(x,x+5)}$"," Taux de f\u00e9condit\u00e9 l\u00e9gitime $fl_{(x,x+5)}$", " Taux de f\u00e9condit\u00e9 naturel $fn_{(x,x+5)}$")
+Colones2 <- c("Composantes l\u00e9gitime", "Composante naturelle", "Naissances l\u00e9gitimes par mariage", "Ann\u00e9es v\u00e9cues")
+Colone3 <- "Nombre moyen de naissances l\u00e9gitimes par ann\u00e9e de mariage"
+options(knitr.kable.NA = '-')
+mnlpam <- data.frame(NaissancesPart1$mnlpam[8])
+kable(select(NaissancesPart1, -Mariees, -mnlpam)[,1:6], col.names = Colones, align = "c")
+kable(select(NaissancesPart1, -Mariees, -mnlpam)[,7:10], col.names = Colones2, align = "c")
+kable(mnlpam, col.names = Colone3, align = "c")
+```
+*Figure 1 : Table de nuptialité et de fécondité, naturelle, légitime et totale issue de la partie 1*
+
+```{r echo = FALSE}
+mnlpam <- data.frame(NaissancesPart2$mnlpam[8])
+kable(select(NaissancesPart2, -Mariees, -mnlpam)[,1:6], col.names = Colones, align = "c")
+kable(select(NaissancesPart2, -Mariees, -mnlpam)[,7:10], col.names = Colones2, align = "c")
+kable(mnlpam, col.names = Colone3, align = "c")
+```
+*Figure 2 : Table de nuptialité et de fécondité, naturelle, légitime et totale issue de la partie 2*
+
+
+```{r echo = FALSE, warning = FALSE}
+NaissancesGeneration <- function (naiss) {
+  return(naiss %>%
+                 head(-1) %>%
+                 rownames_to_column(var = "gen") %>%
+                 mutate(ageMoy = (as.numeric(substr(gen,2,3)) + as.numeric(substr(gen,5,6)))/2) %>%
+                 pivot_longer(c(fx,flx, fnx), names_to = "fec", values_to = "taux"))
+}
+
+NaissancesClean <- function (fec) {
+  return(fec %>%
+                 fct_relevel(
+                         "fx", "flx", "fnx"
+                 ) %>%
+                 fct_recode(
+                         "L\u00e9gitime" = "flx",
+                         "Naturel" = "fnx",
+                         "Total" = "fx"
+                 ))
+}
+
+NaissancesPart1Gen <- NaissancesGeneration(NaissancesPart1)
+NaissancesPart2Gen <- NaissancesGeneration(NaissancesPart2)
+NaissancesPart1Gen$fec <- NaissancesClean(NaissancesPart1Gen$fec)
+NaissancesPart2Gen$fec <- NaissancesClean(NaissancesPart2Gen$fec)
+
+Part1 <- ggplot()+
+        geom_line(data = NaissancesPart1Gen, aes(x = ageMoy, y = taux, color = fec, linetype = fec, size = fec))+
+        scale_color_manual("Taux de f\u00e9condit\u00e9", values=c("#785f9a","#2c8ecb","#71a257"))+
+        scale_linetype_manual("Taux de f\u00e9condit\u00e9", values = c("solid", "dotted", "longdash")) +
+        scale_size_manual("Taux de f\u00e9condit\u00e9", values=c(1, 1, 1, 1, 1, 1))+
         ylab("Taux de f\u00e9condit\u00e9")+
         xlab("\u00C2ge")+
-        theme(legend.position=c(0.84, 0.84))
-```
-*Figure 2 : Evolution des taux de fécondité des femmes en général, des femmes mariées et des femmes non mariées en fonction de leur âge*
+        ggtitle("Partie 1")+
+        theme_light()+
+        theme(legend.position = "none")
 
+Part2 <- ggplot()+
+        geom_line(data = NaissancesPart2Gen, aes(x = ageMoy, y = taux, color = fec, linetype = fec, size = fec))+
+        scale_color_manual("Taux de f\u00e9condit\u00e9",values=c("#785f9a","#2c8ecb","#71a257"))+
+        scale_linetype_manual("Taux de f\u00e9condit\u00e9", values = c("solid", "dotted", "dashed")) +
+        scale_size_manual("Taux de f\u00e9condit\u00e9", values=c(1, 1, 1, 1, 1, 1))+
+        ylab("")+
+        xlab("\u00C2ge")+
+        ggtitle("Partie 2")+
+        theme_light()+
+        theme(legend.position=c(0.80, 0.9))
+
+grid.arrange(Part1, Part2, ncol = 2)
+```
+
+*Figure 3 : Evolution des taux de fécondité des femmes en général, des femmes mariées et des femmes non mariées en fonction de leur âge*
+
+### Figures exercice 2
+
+```{r echo = FALSE}
+AgeMariageFemmePivot1 <-  AgeMariageFemme1 %>%
+  rownames_to_column("aggr") %>%
+  pivot_longer(c("19","22", "27", "32", "39.5"), names_to = "age", values_to = "proba") %>%
+  mutate(label = case_when(
+    aggr == "a0" & age == 39.5 ~ "a[0]",
+    aggr == "a1" & age == 39.5 ~ "a[1]",
+    aggr == "a2" & age == 39.5 ~ "a[2]",
+    aggr == "a3" & age == 39.5 ~ "a[3]",
+    aggr == "a4" & age == 39.5 ~ "a[4]",
+    TRUE ~ NA_character_
+    ))
+
+AgeMariageFemmePivot2 <-  AgeMariageFemme2 %>%
+  rownames_to_column("aggr") %>%
+  pivot_longer(c("19","22", "27", "32", "39.5"), names_to = "age", values_to = "proba") %>%
+        mutate(label = case_when(
+                aggr == "a5" & age == 22 ~ "a[5]",
+                aggr == "a6" & age == 27 ~ "a[6]",
+                aggr == "a7" & age == 27 ~ "a[7]",
+                aggr == "a8" & age == 27 ~ "a[8]",
+                TRUE ~ NA_character_
+        ))
+
+
+PlotAgrandissement1 <- ggplot(AgeMariageFemmePivot1) +
+  geom_line(aes(x = as.numeric(age), y = proba, linetype = aggr, color = aggr, size = aggr)) +
+  scale_linetype_manual(expression(a[n]), values = c("solid", "longdash", "twodash", "dashed", "dotdash"))+
+  scale_color_manual(expression(a[n]), values=c("#785f9a","#9a5f90", "#412ccb", "#2c8ecb","#71a257", "#ffc320","#e9ff20", "#ff5157", "#ff5197"))+
+  scale_size_manual(expression(a[n]), values=c(1, 1, 1, 1, 1, 1, 1, 1, 1))+
+  ylab("Taux d'agrandissememnt (\u2030)")+
+  xlab("\u00C2ge au mariage")+
+  geom_label_repel(aes(x = as.numeric(age), y = proba, label = label),
+                   nudge_x = 2,
+                   na.rm = TRUE,
+                   parse = TRUE,
+                   min.segment.length = 0
+  )+
+  theme_light()+
+  theme(legend.position = "none")
+  #theme(legend.position=c(0.1, 0.18))
+
+PlotAgrandissement2 <- ggplot(AgeMariageFemmePivot2) +
+  geom_line(aes(x = as.numeric(age), y = proba, linetype = aggr, color = aggr, size = aggr)) +
+  scale_linetype_manual(expression(a[n]), values = c("twodash", "dashed", "dotdash", "dotted"))+
+  scale_color_manual(expression(a[n]),values=c("#ffc320","#cb692b", "#ff5157", "#ff5197"))+
+  scale_size_manual(expression(a[n]),values=c(1, 1, 1, 1, 1, 1, 1, 1, 1))+
+  ylab("")+
+  xlab("\u00C2ge au mariage")+
+  geom_label_repel(aes(x = as.numeric(age), y = proba, label = label),
+    parse = TRUE,
+    na.rm = TRUE,
+    min.segment.length = 0
+  )+
+  theme_light()+
+  theme(legend.position = "none")
+  # theme(legend.position=c(0.9, 0.85))
+
+grid.arrange(PlotAgrandissement1, PlotAgrandissement2, ncol = 2)
+```
+*Figure 4 : Probabilité d’agrandissement en fonction de l'âge au mariage des femmes*
+
+```{r}
+# For interpolation
+Interp <- data.frame(
+         Age  = c(20, 25, 30, 35),
+         a0 = round(approx(as.numeric(AgeMariageFemmePivot1[AgeMariageFemmePivot1$aggr == "a0",]$age),
+                           AgeMariageFemmePivot1[AgeMariageFemmePivot1$aggr == "a0",]$proba,
+                           xout = c(20, 25, 30, 35))$y),
+         a1 = round(approx(as.numeric(AgeMariageFemmePivot1[AgeMariageFemmePivot1$aggr == "a1",]$age),
+                     AgeMariageFemmePivot1[AgeMariageFemmePivot1$aggr == "a1",]$proba,
+                     xout = c(20, 25, 30, 35))$y),
+         a2 = round(approx(as.numeric(AgeMariageFemmePivot1[AgeMariageFemmePivot1$aggr == "a2",]$age),
+                     AgeMariageFemmePivot1[AgeMariageFemmePivot1$aggr == "a2",]$proba,
+                     xout = c(20, 25, 30, 35))$y),
+         a3 = round(approx(as.numeric(AgeMariageFemmePivot1[AgeMariageFemmePivot1$aggr == "a3",]$age),
+                     AgeMariageFemmePivot1[AgeMariageFemmePivot1$aggr == "a3",]$proba,
+                     xout = c(20, 25, 30, 35))$y),
+         a4 = round(approx(as.numeric(AgeMariageFemmePivot1[AgeMariageFemmePivot1$aggr == "a4",]$age),
+                     AgeMariageFemmePivot1[AgeMariageFemmePivot1$aggr == "a4",]$proba,
+                     xout = c(20, 25, 30, 35))$y)
+)
+```
+```{r echo = FALSE}
+kable(Interp)
+```
+*Figure 5 : Interpolations calculées entre les âges*
+
+```{r echo = FALSE}
+
+PlotInterpol <- ggplot(filter(AgeMereMariagePivot, an != "a0")) +
+        geom_line(aes(x = as.numeric(age), y = proba, linetype = an, color = an, size = an)) +
+        scale_linetype_manual(expression(a[n]), values = c("longdash", "twodash", "dashed", "dotdash"))+
+        scale_color_manual(expression(a[n]),values=c("#9a5f90", "#412ccb", "#2c8ecb","#71a257"))+
+        scale_size_manual(expression(a[n]),values=c(1, 1, 1, 1, 1, 1, 1, 1, 1))+
+        ylab("Taux d'agrandissememnt (\u2030)")+
+        xlab("\u00C2ge \u00e0 la maternit\u00e9")+
+        geom_label_repel(aes(x = as.numeric(age), y = proba, label = label),
+                         nudge_x = 2,
+                         parse = TRUE,
+                         na.rm = TRUE,
+                         min.segment.length = 0
+        )+
+        theme_light()+
+        theme(legend.position = "none")
+
+PlotInterpolA0 <- ggplot(filter(AgeMereMariagePivot, an == "a0")) +
+        geom_line(aes(x = as.numeric(age), y = proba, linetype = an, color = an, size = an)) +
+        scale_linetype_manual(expression(a[n]), values = c("solid", "longdash", "twodash", "dashed", "dotdash"))+
+        scale_color_manual(expression(a[n]),values=c("#785f9a","#9a5f90", "#412ccb", "#2c8ecb","#71a257"))+
+        scale_size_manual(expression(a[n]),values=c(1, 1, 1, 1, 1, 1, 1, 1, 1))+
+        ylab("Taux d'agrandissememnt (\u2030)")+
+        xlab("\u00C2ge \u00e0 la maternit\u00e9")+
+        geom_label_repel(aes(x = as.numeric(age), y = proba, label = label),
+                         nudge_x = 2,
+                         parse = TRUE,
+                         na.rm = TRUE,
+                         min.segment.length = 0
+        )+
+        theme_light()+
+        theme(legend.position = "none")
+
+grid.arrange(PlotInterpol, PlotInterpolA0, ncol = 2)
+```
+*Figure 6 : Valeurs interpolées en correspondance avec l’âge de la mère à la naissance du $n^{ième}$ enfant*
+```{r echo = FALSE}
+ ggplot(AgeMariageFemme4) +
+        geom_line(aes(x = as.numeric(ageNaiss), y = proba, linetype = as.factor(ageMar), color = as.factor(ageMar) , size = as.factor(ageMar))) +
+        scale_linetype_manual(expression(a[n]), values = c("solid", "longdash", "twodash", "dashed", "dotdash"))+
+        scale_color_manual(expression(a[n]),values=c("#785f9a", "#9a5f90", "#412ccb", "#2c8ecb","#71a257", "#9a5f90", "#412ccb", "#2c8ecb"))+
+        scale_size_manual(expression(a[n]),values=c(1, 1, 1, 1, 1, 1, 1, 1, 1))+
+        ylab("Taux d'agrandissememnt (\u2030)")+
+        xlab("\u00C2ge \u00e0 la maternit\u00e9")+
+         geom_label_repel(aes(x = as.numeric(ageNaiss), y = proba, label = label),
+                          nudge_x = 2,
+                          na.rm = TRUE,
+                          min.segment.length = 0
+         )+
+         theme_light()+
+        theme(legend.position= "none")
+```
+*Figure 7 : Probabilité d’agrandissement en fonction de l'âge à la maternité des femmes, par rang de l'enfant et âge au mariage.*
+
+### Figures exercice 3
+
+
+```{r echo = FALSE}
+kable(data.frame(EnfantsParFamille = EnfantsParFamille), col.names = "Nombre moyen d\'enfants par famille", align = "c")
+kable(data.frame(TauxMortInfantile = TauxMortInfantile), col.names = "Taux de mortalit\u00e9 infantile de l’ensemble des enfants", align = "c")
+colones <- c("Nombre d\'enfant.s", "Nombre de familles", "Taux de mortalit\u00e9 infantile (\u2030)", "taux de mortalité infantile de chaque rang de naissance (\u2030)")
+kable(select(MortaliteInfantile, -tauxMortInfant), col.names = colones, align = "c")
+```
+*Figure 8 : Tableaux des indicateurs des familles et des mortalités.*
